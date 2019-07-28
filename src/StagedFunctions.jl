@@ -1,4 +1,4 @@
-module StagedFunctions
+module StagedFunctions # end
 
 export @staged
 

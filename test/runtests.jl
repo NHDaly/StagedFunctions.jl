@@ -1,8 +1,6 @@
 
-module  M #end
 
-include("../src/Generated265.jl")
-using .StagedFunctions
+using StagedFunctions
 using InteractiveUtils
 
 
@@ -117,5 +115,3 @@ Main.NHDalyUtils.func_all_specializations(foo)
 
 @staged lyndon(x) = :(x+1)
 lyndon(2)
-
-end
