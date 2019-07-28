@@ -7,11 +7,8 @@ export @staged
 # YOU CAN CHECKOUT AND BUILD FROM THIS BRANCH:
 #    https://github.com/NHDaly/julia/tree/export_jl_resolve_globals_in_ir
 
-using Cthulhu
 using Cassette # To share their 265 fixing code
 using MacroTools
-
-import Main: @code_lowered
 
 function expr_to_codeinfo(m, f, t, e)
 
@@ -30,14 +27,10 @@ function expr_to_codeinfo(m, f, t, e)
     ge = Expr(:lambda, ci.slotnames, scoped)
     l = Meta.lower(m, ge)
     ci.code = l.code
-#    Core.println("Before resolving symbols:")
-#    Core.println(ci.code)
     # TODO this requires modifications to Julia to expose jl_resolve_globals_in_ir
     ccall(:jl_resolve_globals_in_ir, Cvoid, (Any, Any, Any), ci.code, @__MODULE__,
             Core.svec(reflection.static_params...)
          )
-#    Core.println("After resolving symbols:")
-#    Core.println(ci.code)
     ci
 end
 

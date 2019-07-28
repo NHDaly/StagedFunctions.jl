@@ -3,35 +3,12 @@ module  M #end
 
 include("../src/Generated265.jl")
 using .StagedFunctions
+using InteractiveUtils
 
 
 f(x) = 2
 @staged lyndon(x) = f(x)
 
-bodyf = getfield(@__MODULE__, Symbol("##generatorbody#443"))
-
-Main.NHDalyUtils.func_all_specializations(lyndon)
-Main.NHDalyUtils.func_all_specializations(bodyf)
-
-
-
-
-lyndon(2)
-
-Main.NHDalyUtils.func_all_specializations(lyndon)
-Main.NHDalyUtils.func_all_specializations(bodyf)
-
-
-
-f_mi = Core.Compiler.method_instances(f, Tuple{Type{Int}})[1]
-f_mi.backedges
-
-
-dave[end].edges
-f(2)
-f_mi.backedges
-
-#nbits(::Type{T})
 f(x) = 2
 @generated g(x) = f(x)
 f(x) = 6
@@ -49,31 +26,59 @@ f(x) = 3
 lyndon(3)
 @code_typed lyndon(3)
 
-f(x) = nathan(x)
-nathan(x) = 2
-lyndon(1)
-nathan(x::Type{Int}) = "Int"
-nathan(x::Type{<:AbstractFloat}) = "Float"
-lyndon(1)
-lyndon(1.0)
-
-l_mi = Core.Compiler.method_instances(bodyf, Tuple{Type{Int}})[1]
-l_mi.backedges
-
-f_mi = Core.Compiler.method_instances(f, Tuple{Type})[1]
-f_mi.backedges
-Main.NHDalyUtils.func_all_specializations(bodyf)
-Main.NHDalyUtils.func_all_specializations(f)
-
-l_mi == dave[end].edges[1]
+@staged s2(x) = :(x*$(f(x)))
+s2(10)
 
 
-
-# PROBLEM: There are no backedges from f to bodyf
-# We can cause them by regular invoke
-#invoke(bodyf, Tuple{Type{Int}}, Int)
-bodyf(Int)
-f_mi.backedges
+#  bodyf = getfield(@__MODULE__, Symbol("##generatorbody#443"))
+#
+#  Main.NHDalyUtils.func_all_specializations(lyndon)
+#  Main.NHDalyUtils.func_all_specializations(bodyf)
+#
+#
+#
+#
+#  lyndon(2)
+#
+#  Main.NHDalyUtils.func_all_specializations(lyndon)
+#  Main.NHDalyUtils.func_all_specializations(bodyf)
+#
+#
+#
+#  f_mi = Core.Compiler.method_instances(f, Tuple{Type{Int}})[1]
+#  f_mi.backedges
+#
+#
+#  dave[end].edges
+#  f(2)
+#  f_mi.backedges
+#
+#  #nbits(::Type{T})
+#  f(x) = nathan(x)
+#  nathan(x) = 2
+#  lyndon(1)
+#  nathan(x::Type{Int}) = "Int"
+#  nathan(x::Type{<:AbstractFloat}) = "Float"
+#  lyndon(1)
+#  lyndon(1.0)
+#
+#  l_mi = Core.Compiler.method_instances(bodyf, Tuple{Type{Int}})[1]
+#  l_mi.backedges
+#
+#  f_mi = Core.Compiler.method_instances(f, Tuple{Type})[1]
+#  f_mi.backedges
+#  Main.NHDalyUtils.func_all_specializations(bodyf)
+#  Main.NHDalyUtils.func_all_specializations(f)
+#
+#  l_mi == dave[end].edges[1]
+#
+#
+#
+#  # PROBLEM: There are no backedges from f to bodyf
+#  # We can cause them by regular invoke
+#  #invoke(bodyf, Tuple{Type{Int}}, Int)
+#  bodyf(Int)
+#  f_mi.backedges
 
 
 foo(x) = bar(x)
@@ -81,7 +86,7 @@ bar(x) = 2
 
 foo(Type{Int})
 Main.NHDalyUtils.func_all_specializations(bar)
-Core.Compiler.method_instances(bar, Type)[1].backedges
+#Core.Compiler.method_instances(bar, Type)[1].backedges
 
 
 
@@ -102,7 +107,7 @@ bar(x) = x+1
 Cassette.overdub(Ctx(), foo, 2)
 
 foo_mi = Core.Compiler.method_instances(foo, Tuple{Type{Int}})[1]
-foo_mi.backedges
+#foo_mi.backedges
 Main.NHDalyUtils.func_all_specializations(foo)
 
 
