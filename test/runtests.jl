@@ -1,6 +1,8 @@
-
+module StagedFunctionsTest
 
 using StagedFunctions
+
+using Test
 using InteractiveUtils
 
 
@@ -11,6 +13,7 @@ f(x) = 2
 @generated g(x) = f(x)
 f(x) = 6
 g(1)
+
 bar(x) = f(x)
 bar(2)
 @code_typed bar(2)
@@ -115,3 +118,36 @@ Main.NHDalyUtils.func_all_specializations(foo)
 
 @staged lyndon(x) = :(x+1)
 lyndon(2)
+
+
+@testset "generated" begin
+    @generated oldstyle(x) = 1
+    oldstyle(3)
+end
+# TODO: We can't generate staged functions inside @testsets
+@testset "inside testset" begin
+    try
+        @staged g1(x) = 1
+        @test true
+    catch e
+        @test_broken false
+    end
+end
+
+#@testset "simple" begin
+    @staged g1(x) = sizeof(x)
+    @test @inferred g1(3) == 8
+#end
+
+#@testset "where clause" begin
+    # TODO: Huh, this one fails still!
+    # The arguments passed-in are different: (Int, typeof(wherefunc), Int)
+    @staged wherefunc(x::T) where {T} = (T)
+    @test_broken wherefunc(2)
+
+    @staged wherefunc2(x::Vector{T}) where {T} = (T)
+    @test_broken wherefunc2([1,2,3])
+#end
+
+
+end  # module

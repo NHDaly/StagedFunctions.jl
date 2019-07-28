@@ -7,8 +7,8 @@ export @staged
 # YOU CAN CHECKOUT AND BUILD FROM THIS BRANCH:
 #    https://github.com/NHDaly/julia/tree/export_jl_resolve_globals_in_ir
 
-using Cassette # To share their 265 fixing code
-using MacroTools
+import Cassette # To share their 265 fixing code
+import MacroTools
 
 function expr_to_codeinfo(m, f, t, e)
 
@@ -68,21 +68,44 @@ end
 # ---------------------
 
 function _make_generator(f)
-    global e = f
-    signature = f.args[1]
-    (fname, fargs) = signature.args[1], signature.args[2:end]
+    def = MacroTools.splitdef(f)
+
+    # Make a copy of the signature for the top-level staged function
+    staged_def = deepcopy(def)
+    staged_fname = staged_def[:name]
 
     # Strip type-assertions and gensymed missing names for all args
     # (x::Int, y, ::Float32) -> (x,y,##genarg##)
-    signature.args = argnames(signature.args)
+    def[:args] = argnames(def[:args])
+    stripped_args = def[:args]
 
     # Update f to be the generatorbody
-    generatorbodyname = signature.args[1] = gensym(:generatorbody)
-    f_stager = gensym( Symbol("$(fname)_stager") )
+    generatorbodyname = def[:name] = gensym(:generatorbody)
+
+    f = MacroTools.combinedef(def)
+    f_stager = gensym( Symbol("$(def[:name])_stager") )
+
+    staged_def[:body] = :(
+        $(Expr(:meta, :generated_only));
+        $(Expr(:meta,
+            :generated,
+            Expr(:new,
+                Core.GeneratedFunctionStub,
+                f_stager,
+                Any[staged_fname, stripped_args...],
+                Any[],  # spnames
+                @__LINE__,
+                QuoteNode(Symbol(@__FILE__)),
+                true)));
+    )
+    staged_func = MacroTools.combinedef(staged_def)
+
     esc(:(
         $f;   # user-written generator body function
         function $f_stager(self, args...)
             # Within this function, args are types.
+            Core.println("self:", self)
+            Core.println("args:", args)
 
             # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
             expr = Core._apply_pure($generatorbodyname, (args...,))
@@ -90,19 +113,7 @@ function _make_generator(f)
 
             code_info
         end;
-        function $fname($(fargs...))   # staged function
-            $(Expr(:meta, :generated_only))
-            $(Expr(:meta,
-                :generated,
-                Expr(:new,
-                    Core.GeneratedFunctionStub,
-                    f_stager,
-                    Any[fname, fargs...],
-                    Any[],  # spnames
-                    @__LINE__,
-                    QuoteNode(Symbol(@__FILE__)),
-                    true)))
-        end
+        $staged_func;
     ))
 end
 
@@ -111,5 +122,9 @@ macro staged(f)
 
     _make_generator(f)
 end
+bar(x) = 2
+@staged f2(x) = bar(x)
+f2(2)
+f2([1,2,3])
 
 end # module
