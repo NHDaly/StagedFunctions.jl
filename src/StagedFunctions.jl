@@ -11,7 +11,6 @@ import Cassette # To share their 265 fixing code
 import MacroTools
 
 function expr_to_codeinfo(m, f, t, e)
-
     scoped = Expr(Symbol("scope-block"),
     Expr(:block,
         Expr(:return,
@@ -19,11 +18,14 @@ function expr_to_codeinfo(m, f, t, e)
                 e,
             ))))
 
-    # TODO: Is this right? Should we really be using `Type`, not `Type{Int}`?
-    #function_sig = (typeof(f), map(Core.Typeof, t)...)
-    function_sig = (typeof(f), (Type for _ in t)...)
+    # Get the code-info for the generatorbody in order to use it for generating a dummy
+    # code info object.
+    # NOTE: We're using the actual function signature of the expected staged_func, so it
+    # matches what the user provided.
+    function_sig = (typeof(f), t...)
     reflection = Cassette.reflect(function_sig)
     ci = reflection.code_info
+    # Update the CodeInfo with our scoped expression from above.
     ge = Expr(:lambda, ci.slotnames, scoped)
     l = Meta.lower(m, ge)
     ci.code = l.code
@@ -111,6 +113,12 @@ function _make_generator(f)
             expr = Core._apply_pure($generatorbodyname, (args...,))
             code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $generatorbodyname, (args...,), expr)
 
+            # TODO: Is this right? Should we really be using `Type`, not `Type{Int}`?
+            # Apparently this is due to a known "bug" / weirdness in the compiler.
+            code_info.edges = Core.MethodInstance[
+                                Core.Compiler.method_instances($generatorbodyname,
+                                                         Tuple{(Type for _ in args)...})[1]]
+
             code_info
         end;
         $staged_func;
@@ -122,9 +130,5 @@ macro staged(f)
 
     _make_generator(f)
 end
-bar(x) = 2
-@staged f2(x) = bar(x)
-f2(2)
-f2([1,2,3])
 
 end # module
