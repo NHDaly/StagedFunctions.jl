@@ -7,7 +7,7 @@ export @staged
 # YOU CAN CHECKOUT AND BUILD FROM THIS BRANCH:
 #    https://github.com/NHDaly/julia/tree/export_jl_resolve_globals_in_ir
 
-import Cassette # To share their 265 fixing code
+import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
 function expr_to_codeinfo(m, f, t, e)
@@ -67,6 +67,30 @@ function argname(e::Expr)
     @assert e.head == Symbol("::")  "Expected (x::T), Got $e"
     return length(e.args) == 2 ? (e.args[1]) : nothing
 end
+
+# ---------------------
+# Set up Cassette for tracing generator execution
+
+Cassette.@context TraceCtx
+
+mutable struct Trace
+    calls::Vector{Any}
+    Trace() = new(Any[])
+end
+
+function Cassette.prehook(ctx::TraceCtx, args...)
+    push!(t.calls, Tuple(typeof(a) for a in args))
+    return nothing
+end
+# Skip Builtins, which can't be redefined so we don't need edges to them!
+Cassette.prehook(ctx::TraceCtx, f::Core.Builtin, args...) = nothing
+
+
+function generate_and_trace(generatorbody, args)
+    trace = Trace()
+    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args...))
+    expr, trace
+end
 # ---------------------
 
 function _make_generator(f)
@@ -106,18 +130,30 @@ function _make_generator(f)
         $f;   # user-written generator body function
         function $f_stager(self, args...)
             # Within this function, args are types.
-            Core.println("self:", self)
-            Core.println("args:", args)
+            #Core.println("self:", self)
+            #Core.println("args:", args)
 
             # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
-            expr = Core._apply_pure($generatorbodyname, (args...,))
+            expr, trace = Core._apply_pure($generate_and_trace, ($generatorbodyname, args))
             code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $generatorbodyname, (args...,), expr)
 
-            # TODO: Is this right? Should we really be using `Type`, not `Type{Int}`?
-            # Apparently this is due to a known "bug" / weirdness in the compiler.
-            code_info.edges = Core.MethodInstance[
-                                Core.Compiler.method_instances($generatorbodyname,
-                                                         Tuple{(Type for _ in args)...})[1]]
+            code_info.edges = Core.MethodInstance[]
+            failures = Any[]
+            for callargs in trace.calls
+                # Skip DataType constructor which found its way in here somehow
+                if callargs[1] == DataType continue end
+                try
+                    push!(code_info.edges, Core.Compiler.method_instances(
+                        callargs[1].instance, Tuple{(a for a in callargs[2:end])...})[1])
+                catch
+                    push!(failures, callargs)
+                    continue
+                end
+            end
+            if !isempty(failures)
+                Core.println("WARNING: Some edges could not be found:")
+                Core.println(failures)
+            end
 
             code_info
         end;

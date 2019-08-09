@@ -1,4 +1,4 @@
-module StagedFunctionsTest
+module StagedFunctionsTest #end
 
 using StagedFunctions
 
@@ -8,6 +8,7 @@ using InteractiveUtils
 
 f(x) = 2
 @staged lyndon(x) = f(x)
+lyndon(2)
 
 f(x) = 2
 @generated g(x) = f(x)
@@ -142,8 +143,9 @@ end
 #end
 
 #@testset "where clause" begin
-    # TODO: Huh, this one fails still!
+    # TODO: This is broken for the same reason it was broken in #32774, fixed in 8c05fc6!
     # The arguments passed-in are different: (Int, typeof(wherefunc), Int)
+    # Apply that fix, and also the fix for varargs... in f20d374! :)
     @staged wherefunc(x::T) where {T} = (T)
     @test_broken wherefunc(2)
 
@@ -158,7 +160,24 @@ f() = Any[baz][1]()
 @staged foo() = f()
 @test foo() == 2
 baz() = 4
-@test_broken foo() == 4
+@test foo() == 4
 
+@time @eval begin
+    @staged foo() = f()
+    foo()
+end
+@time foo()
+@time @eval begin
+    @generated foo() = f()
+    foo()
+end
+@time foo()
+
+struct X x end
+@staged foo() = typemax(X)
+Base.typemax(::Type{X}) = X(10)
+@test foo() == X(10)
+Base.typemax(::Type{X}) = X(100)
+@test foo() == X(100)
 
 end  # module
