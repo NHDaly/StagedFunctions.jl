@@ -22,13 +22,14 @@ bar(2)
 f(x) = 2
 @staged lyndon(x) = f(x)
 
-lyndon(3)
+@test lyndon(3) == 2
 f(x) = 3
-lyndon(3)
+@test lyndon(3) == 3
 @code_typed lyndon(3)
 
 @staged s2(x) = :(x*$(f(x)))
 s2(10)
+
 
 
 #  bodyf = getfield(@__MODULE__, Symbol("##generatorbody#443"))
@@ -149,6 +150,15 @@ end
     @staged wherefunc2(x::Vector{T}) where {T} = (T)
     @test_broken wherefunc2([1,2,3])
 #end
+
+
+# Dynamic Dispatch example: can't use simple backedges
+baz() = 2
+f() = Any[baz][1]()
+@staged foo() = f()
+@test foo() == 2
+baz() = 4
+@test_broken foo() == 4
 
 
 end  # module
