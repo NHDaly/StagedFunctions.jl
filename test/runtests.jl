@@ -7,7 +7,7 @@ using InteractiveUtils
 
 
 f(x) = 2
-@staged lyndon(x) = f(x)
+@macroexpand @staged lyndon(x) = f(x)
 lyndon(2)
 @staged nathan(x::T) where T = f(T)
 lyndon(2)

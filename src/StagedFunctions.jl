@@ -49,6 +49,7 @@ julia> argnames(:(f(x::Int, ::Float32, z)).args[2:end])
  :z
 ```
 """
+argnames(args::Tuple) = argnames([args...])
 function argnames(args::Array)
     tmpcount = 0
     out = []
@@ -110,36 +111,21 @@ function _make_generator(f)
     push!(def[:args], typeparams...)
     def[:whereparams] = empty(def[:whereparams])
 
+    Core.println(typeparams)
+
+    stripped_typeparams = argnames(typeparams)
+
     # Update f to be the generatorbody
     generatorbodyname = def[:name] = gensym(:generatorbody)
 
     f = MacroTools.combinedef(def)
-    f_stager = gensym( Symbol("$(def[:name])_stager") )
 
     staged_def[:body] = :(
-        $(Expr(:meta, :generated_only));
-        $(Expr(:meta,
-            :generated,
-            Expr(:new,
-                Core.GeneratedFunctionStub,
-                f_stager,
-                Any[typeparams..., staged_fname, stripped_args...],  # Do typeparams go here?
-                Any[],  # spnames  ?? What is this? Is this typeparams?
-                @__LINE__,
-                QuoteNode(Symbol(@__FILE__)),
-                true)));
-    )
-    staged_func = MacroTools.combinedef(staged_def)
+            if $(Expr(:generated))
 
-    esc(:(
-        $f;   # user-written generator body function
-        function $f_stager(allargs...)
-            # Within this function, args are types.
-            typeparams = allargs[1:end-$num_args-1]
-            self = allargs[end-$num_args]
-            args = allargs[end-$num_args+1:end]
+            typeparams = $stripped_typeparams
+            args = $stripped_args
             Core.println("typeparams:", typeparams)
-            Core.println("self:", self)
             Core.println("args:", args)
 
             # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
@@ -167,7 +153,16 @@ function _make_generator(f)
             end
 
             code_info
-        end;
+
+            else
+                $(Expr(:meta, :generated_only))
+                return
+            end;
+    )
+    staged_func = MacroTools.combinedef(staged_def)
+
+    esc(:(
+        $f;   # user-written generator body function
         $staged_func;
     ))
 end
