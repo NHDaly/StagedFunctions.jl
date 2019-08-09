@@ -79,16 +79,16 @@ mutable struct Trace
 end
 
 function Cassette.prehook(ctx::TraceCtx, args...)
-    push!(t.calls, Tuple(typeof(a) for a in args))
+    push!(ctx.metadata.calls, Tuple(typeof(a) for a in args))
     return nothing
 end
 # Skip Builtins, which can't be redefined so we don't need edges to them!
 Cassette.prehook(ctx::TraceCtx, f::Core.Builtin, args...) = nothing
 
 
-function generate_and_trace(generatorbody, args)
+function generate_and_trace(generatorbody, args, typeparams)
     trace = Trace()
-    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args...))
+    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args..., typeparams...))
     expr, trace
 end
 # ---------------------
@@ -103,7 +103,12 @@ function _make_generator(f)
     # Strip type-assertions and gensymed missing names for all args
     # (x::Int, y, ::Float32) -> (x,y,##genarg##)
     def[:args] = argnames(def[:args])
-    stripped_args = def[:args]
+    stripped_args = deepcopy(def[:args])
+    num_args = length(stripped_args)
+    # Move the whereparams to be regular function parameters (since we're passing the types)
+    typeparams = deepcopy(def[:whereparams])
+    push!(def[:args], typeparams...)
+    def[:whereparams] = empty(def[:whereparams])
 
     # Update f to be the generatorbody
     generatorbodyname = def[:name] = gensym(:generatorbody)
@@ -118,8 +123,8 @@ function _make_generator(f)
             Expr(:new,
                 Core.GeneratedFunctionStub,
                 f_stager,
-                Any[staged_fname, stripped_args...],
-                Any[],  # spnames
+                Any[typeparams..., staged_fname, stripped_args...],  # Do typeparams go here?
+                Any[],  # spnames  ?? What is this? Is this typeparams?
                 @__LINE__,
                 QuoteNode(Symbol(@__FILE__)),
                 true)));
@@ -128,14 +133,20 @@ function _make_generator(f)
 
     esc(:(
         $f;   # user-written generator body function
-        function $f_stager(self, args...)
+        function $f_stager(allargs...)
             # Within this function, args are types.
-            #Core.println("self:", self)
-            #Core.println("args:", args)
+            typeparams = allargs[1:end-$num_args-1]
+            self = allargs[end-$num_args]
+            args = allargs[end-$num_args+1:end]
+            Core.println("typeparams:", typeparams)
+            Core.println("self:", self)
+            Core.println("args:", args)
 
             # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
-            expr, trace = Core._apply_pure($generate_and_trace, ($generatorbodyname, args))
-            code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $generatorbodyname, (args...,), expr)
+            expr, trace = Core._apply_pure($generate_and_trace, ($generatorbodyname, args, typeparams))
+            Core.println(expr)
+            code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $generatorbodyname, (args..., typeparams...), expr)
+            Core.println(code_info)
 
             code_info.edges = Core.MethodInstance[]
             failures = Any[]

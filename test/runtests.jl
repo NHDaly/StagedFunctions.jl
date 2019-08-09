@@ -9,6 +9,19 @@ using InteractiveUtils
 f(x) = 2
 @staged lyndon(x) = f(x)
 lyndon(2)
+@staged nathan(x::T) where T = f(T)
+lyndon(2)
+struct X x end
+@staged X(v) = :(v)
+@staged X(v::T) where {T<:Int} = :(T)
+X(1.0)
+X(1)
+@staged X(v::T, y::S) where {T,S} = :(println(v, y, $T); T)
+X(X,1)
+
+@staged sarah(x) = :(x+x)
+sarah(2)
+
 
 f(x) = 2
 @generated g(x) = f(x)
