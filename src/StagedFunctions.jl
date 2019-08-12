@@ -23,6 +23,7 @@ function expr_to_codeinfo(m, f, t, e)
     # NOTE: We're using the actual function signature of the expected staged_func, so it
     # matches what the user provided.
     function_sig = (typeof(f), t...)
+    Core.println("function_sig: $function_sig")
     reflection = Cassette.reflect(function_sig)
     ci = reflection.code_info
     # Update the CodeInfo with our scoped expression from above.
@@ -87,9 +88,9 @@ end
 Cassette.prehook(ctx::TraceCtx, f::Core.Builtin, args...) = nothing
 
 
-function generate_and_trace(generatorbody, args, typeparams)
+function generate_and_trace(generatorbody, args)
     trace = Trace()
-    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args..., typeparams...))
+    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args...))
     expr, trace
 end
 # ---------------------
@@ -97,73 +98,53 @@ end
 function _make_generator(f)
     def = MacroTools.splitdef(f)
 
-    # Make a copy of the signature for the top-level staged function
-    staged_def = deepcopy(def)
-    staged_fname = staged_def[:name]
+    fname = def[:name]
+    stripped_args = argnames(def[:args])
 
-    # Strip type-assertions and gensymed missing names for all args
-    # (x::Int, y, ::Float32) -> (x,y,##genarg##)
-    def[:args] = argnames(def[:args])
-    stripped_args = deepcopy(def[:args])
-    num_args = length(stripped_args)
-    # Move the whereparams to be regular function parameters (since we're passing the types)
-    typeparams = deepcopy(def[:whereparams])
-    push!(def[:args], typeparams...)
-    def[:whereparams] = empty(def[:whereparams])
+    userbody = def[:body]
 
-    Core.println(typeparams)
+    fcopy_def = deepcopy(def)
+    fcopy_def[:body] = nothing
+    fcopy_def[:name] = gensym(fname)
+    fcopy_for_codeinfo_def = MacroTools.combinedef(fcopy_def)
 
-    stripped_typeparams = argnames(typeparams)
 
-    # Update f to be the generatorbody
-    generatorbodyname = def[:name] = gensym(:generatorbody)
+    def[:body] = quote
+        # Note that this captures all the args and type params
+        userfunc = () -> $userbody
 
+        args = $stripped_args
+
+        # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
+        expr, trace = Core._apply_pure($generate_and_trace, (userfunc, ()))
+        Core.println(expr)
+        code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $(fcopy_def[:name]), ($(stripped_args...),), expr)
+        Core.println(code_info)
+
+        code_info.edges = Core.MethodInstance[]
+        failures = Any[]
+        for callargs in trace.calls
+            # Skip DataType constructor which found its way in here somehow
+            if callargs[1] == DataType continue end
+            try
+                push!(code_info.edges, Core.Compiler.method_instances(
+                    callargs[1].instance, Tuple{(a for a in callargs[2:end])...})[1])
+            catch
+                push!(failures, callargs)
+                continue
+            end
+        end
+        if !isempty(failures)
+            Core.println("WARNING: Some edges could not be found:")
+            Core.println(failures)
+        end
+
+        code_info
+    end
     f = MacroTools.combinedef(def)
-
-    staged_def[:body] = :(
-            if $(Expr(:generated))
-
-            typeparams = $stripped_typeparams
-            args = $stripped_args
-            Core.println("typeparams:", typeparams)
-            Core.println("args:", args)
-
-            # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
-            expr, trace = Core._apply_pure($generate_and_trace, ($generatorbodyname, args, typeparams))
-            Core.println(expr)
-            code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $generatorbodyname, (args..., typeparams...), expr)
-            Core.println(code_info)
-
-            code_info.edges = Core.MethodInstance[]
-            failures = Any[]
-            for callargs in trace.calls
-                # Skip DataType constructor which found its way in here somehow
-                if callargs[1] == DataType continue end
-                try
-                    push!(code_info.edges, Core.Compiler.method_instances(
-                        callargs[1].instance, Tuple{(a for a in callargs[2:end])...})[1])
-                catch
-                    push!(failures, callargs)
-                    continue
-                end
-            end
-            if !isempty(failures)
-                Core.println("WARNING: Some edges could not be found:")
-                Core.println(failures)
-            end
-
-            code_info
-
-            else
-                $(Expr(:meta, :generated_only))
-                return
-            end;
-    )
-    staged_func = MacroTools.combinedef(staged_def)
-
-    esc(:(
-        $f;   # user-written generator body function
-        $staged_func;
+    return esc(:(
+        $fcopy_for_codeinfo_def;
+        @generated $f;
     ))
 end
 
