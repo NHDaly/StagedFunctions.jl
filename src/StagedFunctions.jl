@@ -79,7 +79,7 @@ mutable struct Trace
 end
 
 function Cassette.prehook(ctx::TraceCtx, args...)
-    push!(t.calls, Tuple(typeof(a) for a in args))
+    push!(ctx.metadata.calls, Tuple(typeof(a) for a in args))
     return nothing
 end
 # Skip Builtins, which can't be redefined so we don't need edges to them!
