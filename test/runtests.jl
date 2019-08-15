@@ -162,12 +162,16 @@ end
     @test wherefunc2([1,2,3]) == Int
 end
 
-@testset "varargs..." begin
-    @test_broken @eval begin
-        # Currently does not support functions with varargs.
-        @staged varargs(x, y...) = length(y)
-    end
-    #@test varargs(2) == Int
+@testset "varargs...; fixed in PR (#3)" begin
+    @staged argscount(x...) = length(x)
+    @test argscount(1,2,3) == 3
+
+    @staged tail(x, y...) = :y
+    @test tail(1, 2,3) == (2,3)
+end
+@testset "type params + varargs" begin
+    @staged f(x::Int, y::T, z...) where {T} = :(T, x, z)
+    @test f(1, 2, 3, 4) == (Int, 1, (3,4))
 end
 
 # Dynamic dispatches: Fixed by tracing compilation (PR #1)
