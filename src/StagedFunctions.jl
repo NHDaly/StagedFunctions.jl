@@ -23,6 +23,7 @@ function expr_to_codeinfo(m, argnames, spnames, sp, e)
     else
         Expr(Symbol("with-static-parameters"), lam, spnames...)
     end
+    #Core.println("ex: $ex")
 
 
     # Get the code-info for the generatorbody in order to use it for generating a dummy
@@ -66,8 +67,13 @@ function argnames(args::Array)
 end
 argname(x::Symbol) = (x)
 function argname(e::Expr)
-    @assert e.head == Symbol("::") || e.head == Symbol("<:")  "Expected x::T or T<:S, Got $e"
-    return length(e.args) == 2 ? (e.args[1]) : nothing
+    if e.head == Symbol("::") || e.head == Symbol("<:")
+        return length(e.args) == 2 ? (e.args[1]) : nothing
+    elseif e.head == Symbol("...")
+        return e.args[1]
+    else
+        throw(AssertionError("Expected valid argument expression (`x::T`, `T<:S`, `x...`). Got $e"))
+    end
 end
 
 # ---------------------
@@ -98,6 +104,7 @@ end
 function _make_generator(__module__, f)
     def = MacroTools.splitdef(f)
 
+    @show def[:args]
     stripped_args = argnames(def[:args])
     stripped_whereparams = argnames(def[:whereparams])
 
