@@ -86,13 +86,15 @@ mutable struct Trace
     Trace() = new(Any[])
 end
 
-function Cassette.prehook(ctx::TraceCtx, args...)
-    push!(ctx.metadata.calls, Tuple(typeof(a) for a in args))
+function Cassette.prehook(ctx::TraceCtx, f, args...)
+    push!(ctx.metadata.calls, (f, Tuple{(type_arg(a) for a in args)...}))
     return nothing
 end
 # Skip Builtins, which can't be redefined so we don't need edges to them!
 Cassette.prehook(ctx::TraceCtx, f::Core.Builtin, args...) = nothing
-
+# Get typeof(arg) or Type{T} if arg is a Type. This keeps the method instances more precise.
+type_arg(a) = typeof(a)
+type_arg(::Type{T}) where {T} = Type{T}
 
 function generate_and_trace(generatorbody, args)
     trace = Trace()
@@ -104,7 +106,6 @@ end
 function _make_generator(__module__, f)
     def = MacroTools.splitdef(f)
 
-    @show def[:args]
     stripped_args = argnames(def[:args])
     stripped_whereparams = argnames(def[:whereparams])
 
@@ -129,12 +130,11 @@ function _make_generator(__module__, f)
 
         code_info.edges = Core.MethodInstance[]
         failures = Any[]
-        for callargs in trace.calls
+        for (callf,callargs) in trace.calls
             # Skip DataType constructor which found its way in here somehow
-            if callargs[1] == DataType continue end
+            if callf == DataType continue end
             try
-                push!(code_info.edges, Core.Compiler.method_instances(
-                    callargs[1].instance, Tuple{(a for a in callargs[2:end])...})[1])
+                push!(code_info.edges, Core.Compiler.method_instances(callf, callargs)[1])
             catch
                 push!(failures, callargs)
                 continue
@@ -144,6 +144,7 @@ function _make_generator(__module__, f)
             Core.println("WARNING: Some edges could not be found:")
             Core.println(failures)
         end
+        #Core.println("edges: $(code_info.edges)")
 
         code_info
     end

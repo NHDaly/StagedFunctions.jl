@@ -197,12 +197,12 @@ end
 end
 @time foo()
 
-# BROKEN: This should work now... I think I've exposed an error in Cassette.
+# Staged functions that operate on type params: Fixed in PR (#4)
 struct X x end
 @staged foo() = typemax(X)
 Base.typemax(::Type{X}) = X(10)
-@test_broken foo() == X(10)
+@test foo() == X(10)
 Base.typemax(::Type{X}) = X(100)
-@test_broken foo() == X(100)
+@test foo() == X(100)
 
 end  # module
