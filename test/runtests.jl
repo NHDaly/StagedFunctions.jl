@@ -100,7 +100,7 @@ foo(x) = bar(x)
 bar(x) = 2
 
 foo(Type{Int})
-Main.NHDalyUtils.func_all_specializations(bar)
+#Main.NHDalyUtils.func_all_specializations(bar)
 #Core.Compiler.method_instances(bar, Type)[1].backedges
 
 
@@ -110,22 +110,22 @@ typeargs([2,3])
 
 
 
-# ============================================================================
-# Comparing with Cassette
-# ============================================================================
-
-using Cassette
-
-Cassette.@context Ctx;
-
-foo(x) = bar(x)
-bar(x) = x+1
-Cassette.overdub(Ctx(), foo, 2)
-
-foo_mi = Core.Compiler.method_instances(foo, Tuple{Type{Int}})[1]
-#foo_mi.backedges
-Main.NHDalyUtils.func_all_specializations(foo)
-
+# # ============================================================================
+# # Comparing with Cassette
+# # ============================================================================
+#
+# using Cassette
+#
+# Cassette.@context Ctx;
+#
+# foo(x) = bar(x)
+# bar(x) = x+1
+# Cassette.overdub(Ctx(), foo, 2)
+#
+# foo_mi = Core.Compiler.method_instances(foo, Tuple{Type{Int}})[1]
+# #foo_mi.backedges
+# Main.NHDalyUtils.func_all_specializations(foo)
+#
 
 
 
@@ -136,44 +136,52 @@ lyndon(2)
 
 
 @testset "generated" begin
-    @generated oldstyle(x) = 1
-    oldstyle(3)
+    @generated oldstyle() = 1
+    @test oldstyle() == 1
 end
-# TODO: We can't generate staged functions inside @testsets
-@testset "inside testset" begin
-    try
-        @staged g1(x) = 1
-        @test true
-    catch e
-        @test_broken false
-    end
+@testset "staged" begin
+    @staged g1() = 1
+    @test g1() == 1
 end
 
-#@testset "simple" begin
+@testset "simple" begin
     @staged g1(x) = sizeof(x)
     @test @inferred g1(3) == 8
-#end
+end
 
-#@testset "where clause" begin
-    # TODO: This is broken for the same reason it was broken in #32774, fixed in 8c05fc6!
-    # The arguments passed-in are different: (Int, typeof(wherefunc), Int)
-    # Apply that fix, and also the fix for varargs... in f20d374! :)
+@testset "type params and where clauses; fixed in PR (#2)" begin
+    @staged typeparam(x::Int, y::Int) = :(x+y)
+    @test typeparam(2,3) == 5
+    @test_throws MethodError typeparam("", "")
+
+    # Test that @staged functions work with where clauses
     @staged wherefunc(x::T) where {T} = (T)
-    @test_broken wherefunc(2)
+    @test wherefunc(2) == Int
 
     @staged wherefunc2(x::Vector{T}) where {T} = (T)
-    @test_broken wherefunc2([1,2,3])
-#end
+    @test wherefunc2([1,2,3]) == Int
+end
 
+@testset "varargs..." begin
+    @test_broken @eval begin
+        # Currently does not support functions with varargs.
+        @staged varargs(x, y...) = length(y)
+    end
+    #@test varargs(2) == Int
+end
 
-# Dynamic Dispatch example: can't use simple backedges
+# Dynamic dispatches: Fixed by tracing compilation (PR #1)
+#  Simple backedges aren't sufficient for these cases
 baz() = 2
 f() = Any[baz][1]()
 @staged foo() = f()
 @test foo() == 2
-baz() = 4
-@test foo() == 4
+baz() = 4             # Update baz()
+@test foo() == 4      # And foo() is regenerated
 
+
+# Currently, @staged functions are around 10x slower than @generated funcs b/c of the
+# tracing with Cassette.
 @time @eval begin
     @staged foo() = f()
     foo()
@@ -185,11 +193,12 @@ end
 end
 @time foo()
 
+# BROKEN: This should work now... I think I've exposed an error in Cassette.
 struct X x end
 @staged foo() = typemax(X)
 Base.typemax(::Type{X}) = X(10)
-@test foo() == X(10)
+@test_broken foo() == X(10)
 Base.typemax(::Type{X}) = X(100)
-@test foo() == X(100)
+@test_broken foo() == X(100)
 
 end  # module
