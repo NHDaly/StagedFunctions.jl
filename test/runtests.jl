@@ -5,25 +5,10 @@ using StagedFunctions
 using Test
 using InteractiveUtils
 
-_hasmethod_false(@nospecialize(f), @nospecialize(t), @nospecialize(w)) = false
-_hasmethod_true(@nospecialize(f), @nospecialize(t), @nospecialize(w)) = true
-
-@eval function f(x,y)
-    #ci_orig = Base.uncompressed_ast(typeof(_hasmethod_true).name.mt.defs.func)
-    #ccall(:jl_copy_code_info, Ref{Core.CodeInfo}, (Any,), ci_orig)
-    ci_orig = InteractiveUtils.code_lowered(+, (x, y))[1]
-    ci = ccall(:jl_copy_code_info, Ref{Core.CodeInfo}, (Any,), ci_orig)
-    empty!(ci.linetable)
-    ci
-end
-
-f(1,2)
-
 f(x) = 2
 @staged lyndon(x) = f(x)
-ci = lyndon(2)
-dump(ci)
-@staged nathan(x::T) where T = f(T)
+lyndon(2)
+f(x) = 3
 lyndon(2)
 struct X x end
 @staged X(v) = :(v)

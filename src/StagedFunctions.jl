@@ -10,30 +10,30 @@ export @staged
 import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
-function expr_to_codeinfo(m, f, t, e)
-    scoped = Expr(Symbol("scope-block"),
-    Expr(:block,
-        Expr(:return,
-            Expr(:block,
-                e,
-            ))))
+function expr_to_codeinfo(m, f, argnames, spnames, t, sp, e)
+    lam = Expr(:lambda, argnames,
+               Expr(Symbol("scope-block"),
+                    Expr(:block,
+                        Expr(:return,
+                            Expr(:block,
+                                e,
+                            )))))
+    ex = if spnames === nothing
+        lam
+    else
+        Expr(Symbol("with-static-parameters"), lam, spnames...)
+    end
+
 
     # Get the code-info for the generatorbody in order to use it for generating a dummy
     # code info object.
-    # NOTE: We're using the actual function signature of the expected staged_func, so it
-    # matches what the user provided.
-    function_sig = (typeof(f), t...)
-    Core.println("function_sig: $function_sig")
-    reflection = Cassette.reflect(function_sig)
-    ci = reflection.code_info
-    # Update the CodeInfo with our scoped expression from above.
-    ge = Expr(:lambda, ci.slotnames, scoped)
-    l = Meta.lower(m, ge)
-    ci.code = l.code
+    ci = ccall(:jl_expand, Any, (Any, Any), ex, m)
+    #Core.println("ci: $ci")
+    #Core.println("sp:", Core.svec(sp...))
+
     # TODO this requires modifications to Julia to expose jl_resolve_globals_in_ir
-    ccall(:jl_resolve_globals_in_ir, Cvoid, (Any, Any, Any), ci.code, @__MODULE__,
-            Core.svec(reflection.static_params...)
-         )
+    ccall(:jl_resolve_globals_in_ir, Cvoid, (Any, Any, Any, Cint), ci.code, m,
+            Core.svec(sp...), 1)
     ci
 end
 
@@ -66,7 +66,7 @@ function argnames(args::Array)
 end
 argname(x::Symbol) = (x)
 function argname(e::Expr)
-    @assert e.head == Symbol("::")  "Expected (x::T), Got $e"
+    @assert e.head == Symbol("::") || e.head == Symbol("<:")  "Expected x::T or T<:S, Got $e"
     return length(e.args) == 2 ? (e.args[1]) : nothing
 end
 
@@ -95,11 +95,12 @@ function generate_and_trace(generatorbody, args)
 end
 # ---------------------
 
-function _make_generator(f)
+function _make_generator(__module__, f)
     def = MacroTools.splitdef(f)
 
     fname = def[:name]
     stripped_args = argnames(def[:args])
+    stripped_whereparams = argnames(def[:whereparams])
 
     userbody = def[:body]
 
@@ -117,9 +118,9 @@ function _make_generator(f)
 
         # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
         expr, trace = Core._apply_pure($generate_and_trace, (userfunc, ()))
-        Core.println(expr)
-        code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $(fcopy_def[:name]), ($(stripped_args...),), expr)
-        Core.println(code_info)
+        #Core.println("expr: $expr")
+        code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $(fcopy_def[:name]), $stripped_args, $stripped_whereparams, ($(stripped_args...),), ($(stripped_whereparams...),), expr)
+        #Core.println("code_info: $code_info")
 
         code_info.edges = Core.MethodInstance[]
         failures = Any[]
@@ -142,16 +143,25 @@ function _make_generator(f)
         code_info
     end
     f = MacroTools.combinedef(def)
+
+    # Last, we modify f to _actually_ return its CodeInfo, instead of quoting it)
+    lowered_gen_f = Meta.lower(__module__, :(@generated $f))
+    # Extract the CodeInfo return value out of the :($(Expr(:block, QuoteNode(%2)))
+    method = [ex for ex in lowered_gen_f.args[1].code
+                 if ex isa Expr && ex.head == :method][end-2]
+    method.args[end].code[end-1] =
+        method.args[end].code[end-1].args[end]
+
     return esc(:(
         $fcopy_for_codeinfo_def;
-        @generated $f;
+        $lowered_gen_f;
     ))
 end
 
 macro staged(f)
     @assert isa(f, Expr) && (f.head === :function || Base.is_short_function_def(f)) "invalid syntax; @staged must be used with a function definition"
 
-    _make_generator(f)
+    _make_generator(__module__, f)
 end
 
 end # module
