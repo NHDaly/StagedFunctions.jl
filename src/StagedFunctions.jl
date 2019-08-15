@@ -10,7 +10,7 @@ export @staged
 import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
-function expr_to_codeinfo(m, f, argnames, spnames, t, sp, e)
+function expr_to_codeinfo(m, argnames, spnames, sp, e)
     lam = Expr(:lambda, argnames,
                Expr(Symbol("scope-block"),
                     Expr(:block,
@@ -98,17 +98,10 @@ end
 function _make_generator(__module__, f)
     def = MacroTools.splitdef(f)
 
-    fname = def[:name]
     stripped_args = argnames(def[:args])
     stripped_whereparams = argnames(def[:whereparams])
 
     userbody = def[:body]
-
-    fcopy_def = deepcopy(def)
-    fcopy_def[:body] = nothing
-    fcopy_def[:name] = gensym(fname)
-    fcopy_for_codeinfo_def = MacroTools.combinedef(fcopy_def)
-
 
     def[:body] = quote
         # Note that this captures all the args and type params
@@ -119,7 +112,12 @@ function _make_generator(__module__, f)
         # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
         expr, trace = Core._apply_pure($generate_and_trace, (userfunc, ()))
         #Core.println("expr: $expr")
-        code_info = $(@__MODULE__).expr_to_codeinfo(@__MODULE__, $(fcopy_def[:name]), $stripped_args, $stripped_whereparams, ($(stripped_args...),), ($(stripped_whereparams...),), expr)
+        code_info = $expr_to_codeinfo($__module__,
+                                      # Note that generated functions all take an extra arg
+                                      # for the generator itself: `#self#`
+                                      [Symbol("#self#"), $stripped_args...],
+                                      $stripped_whereparams, ($(stripped_whereparams...),),
+                                      expr)
         #Core.println("code_info: $code_info")
 
         code_info.edges = Core.MethodInstance[]
@@ -144,7 +142,7 @@ function _make_generator(__module__, f)
     end
     f = MacroTools.combinedef(def)
 
-    # Last, we modify f to _actually_ return its CodeInfo, instead of quoting it)
+    # Last, we modify f to _actually_ return its CodeInfo, instead of quoting it
     lowered_gen_f = Meta.lower(__module__, :(@generated $f))
     # Extract the CodeInfo return value out of the :($(Expr(:block, QuoteNode(%2)))
     method = [ex for ex in lowered_gen_f.args[1].code
@@ -153,7 +151,6 @@ function _make_generator(__module__, f)
         method.args[end].code[end-1].args[end]
 
     return esc(:(
-        $fcopy_for_codeinfo_def;
         $lowered_gen_f;
     ))
 end
