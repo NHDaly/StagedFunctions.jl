@@ -2,11 +2,10 @@ module StagedFunctions # end
 
 export @staged
 
-@assert VERSION >= v"1.3.0-DEV.379"
-# TODO: THIS MUST BE BUILT WITH A MODIFIED VERSION OF JULIA TO EXPORT A NEEDED FUNCTION.
-# YOU CAN CHECKOUT AND BUILD FROM THIS BRANCH:
-#    https://github.com/NHDaly/julia/tree/export_jl_resolve_globals_in_ir
+@assert VERSION >= v"1.4.0-DEV.249" "This package reqiures a Julia version >= v\"1.4.0-DEV.249\", or later than 2019-10-03."
 
+# TODO: Note, this currently needs a custom Cassette: https://github.com/NHDaly/StagedFunctions.jl#append-edges
+# Can remove that requirement once https://github.com/jrevels/Cassette.jl/pull/148 is merged.
 import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
