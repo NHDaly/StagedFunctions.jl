@@ -18,7 +18,7 @@ function expr_to_codeinfo(m, argnames, spnames, sp, e)
                             Expr(:block,
                                 e,
                             )))))
-    ex = if spnames === nothing
+    ex = if spnames === nothing || isempty(spnames)
         lam
     else
         Expr(Symbol("with-static-parameters"), lam, spnames...)
@@ -28,13 +28,10 @@ function expr_to_codeinfo(m, argnames, spnames, sp, e)
 
     # Get the code-info for the generatorbody in order to use it for generating a dummy
     # code info object.
-    ci = ccall(:jl_expand, Any, (Any, Any), ex, m)
-    #Core.println("ci: $ci")
-    #Core.println("sp:", Core.svec(sp...))
+    ci = ccall(:jl_expand_and_resolve, Any, (Any, Any, Core.SimpleVector), ex, m, Core.svec(sp...))
 
-    # TODO this requires modifications to Julia to expose jl_resolve_globals_in_ir
-    ccall(:jl_resolve_globals_in_ir, Cvoid, (Any, Any, Any, Cint), ci.code, m,
-            Core.svec(sp...), 1)
+    @assert ci isa Core.CodeInfo "Failed to compile @staged function. This might mean it contains a closure or comprehension?"
+
     ci
 end
 
@@ -114,8 +111,6 @@ function _make_generator(__module__, f)
     def[:body] = quote
         # Note that this captures all the args and type params
         userfunc = () -> $userbody
-
-        args = $stripped_args
 
         # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
         expr, trace = Core._apply_pure($generate_and_trace, (userfunc, ()))
