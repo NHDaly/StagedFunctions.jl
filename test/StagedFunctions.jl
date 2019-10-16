@@ -205,4 +205,13 @@ Base.typemax(::Type{X}) = X(10)
 Base.typemax(::Type{X}) = X(100)
 @test foo() == X(100)
 
+@testset "error handling" begin
+    # Ensure that `@staged` reports the same errors that @generated would for users' errors
+
+    # static parameter names not unique
+    @test try @eval @staged foo(x) where T where T = 2 catch e; e end ==
+        try @eval @generated foo(x) where T where T = 2 catch e; e end
+end
+
+
 end  # module
