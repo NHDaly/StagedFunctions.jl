@@ -4,8 +4,8 @@ export @staged
 
 @assert VERSION >= v"1.4.0-DEV.249" "This package reqiures a Julia version >= v\"1.4.0-DEV.249\", or later than 2019-10-03."
 
-# TODO: Note, this currently needs a custom Cassette: https://github.com/NHDaly/StagedFunctions.jl#append-edges
-# Can remove that requirement once https://github.com/jrevels/Cassette.jl/pull/148 is merged.
+# Note, this requires Cassette built after 2019-10-10, or after
+# https://github.com/jrevels/Cassette.jl/pull/148 was merged.
 import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
@@ -105,6 +105,8 @@ function _make_generator(__module__, f)
     stripped_args = argnames(def[:args])
     stripped_whereparams = argnames(def[:whereparams])
 
+    # Extract the user's function body, and have our generated function use it to compute
+    # the result, setting edges to the functions invoked to compute it.
     userbody = def[:body]
 
     def[:body] = quote
