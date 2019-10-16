@@ -142,19 +142,24 @@ function _make_generator(__module__, f)
 
         code_info
     end
+
     f = MacroTools.combinedef(def)
+    f = :(@generated $f)
 
     # Last, we modify f to _actually_ return its CodeInfo, instead of quoting it
-    lowered_gen_f = Meta.lower(__module__, :(@generated $f))
+    lowered_gen_f = Meta.lower(__module__, f)
+    if (lowered_gen_f.head == :error)
+        # If there was a syntax error in the input, return it unmodified.
+        return esc(lowered_gen_f)
+    end
+
     # Extract the CodeInfo return value out of the :($(Expr(:block, QuoteNode(%2)))
     method = [ex for ex in lowered_gen_f.args[1].code
                  if ex isa Expr && ex.head == :method][end-2]
     method.args[end].code[end-1] =
         method.args[end].code[end-1].args[end]
 
-    return esc(:(
-        $lowered_gen_f;
-    ))
+    return esc(lowered_gen_f)
 end
 
 macro staged(f)
