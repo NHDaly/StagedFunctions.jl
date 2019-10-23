@@ -142,26 +142,21 @@ function _make_generator(__module__, f)
         end
         #Core.println("edges: $(code_info.edges)")
 
-        code_info
+        # NOTE: The "return" here is very important! Apparently this is a bit of syntax that
+        # julia is very sensitive to: Apparently the code-lowering for generated functions
+        # wraps _final expressions_ in an `Expr(:block, ...)` quote, but _doesn't_ do that
+        # for _`return` expressions_. So if this line was `code_info` instead of `return
+        # code_info`, this would produce a generated function that returns a CodeInfo.
+        # Instead, _with_ the `return` here, Julia uses the returned CodeInfo we've
+        # constructd to create the generated function, so we get a function based on the
+        # user's provided code like we want.
+        return code_info
     end
 
     f = MacroTools.combinedef(def)
     f = :(@generated $f)
 
-    # Last, we modify f to _actually_ return its CodeInfo, instead of quoting it
-    lowered_gen_f = Meta.lower(__module__, f)
-    if (lowered_gen_f.head == :error)
-        # If there was a syntax error in the input, return it unmodified.
-        return esc(lowered_gen_f)
-    end
-
-    # Extract the CodeInfo return value out of the :($(Expr(:block, QuoteNode(%2)))
-    method = [ex for ex in lowered_gen_f.args[1].code
-                 if ex isa Expr && ex.head == :method][end-2]
-    method.args[end].code[end-1] =
-        method.args[end].code[end-1].args[end]
-
-    return esc(lowered_gen_f)
+    return esc(f)
 end
 
 macro staged(f)
