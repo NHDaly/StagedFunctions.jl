@@ -110,25 +110,6 @@ typeargs([2,3])
 
 
 
-# # ============================================================================
-# # Comparing with Cassette
-# # ============================================================================
-#
-# using Cassette
-#
-# Cassette.@context Ctx;
-#
-# foo(x) = bar(x)
-# bar(x) = x+1
-# Cassette.overdub(Ctx(), foo, 2)
-#
-# foo_mi = Core.Compiler.method_instances(foo, Tuple{Type{Int}})[1]
-# #foo_mi.backedges
-# Main.NHDalyUtils.func_all_specializations(foo)
-#
-
-
-
 
 
 @staged lyndon(x) = :(x+1)

@@ -4,9 +4,6 @@ export @staged
 
 @assert VERSION >= v"1.4.0-DEV.249" "This package reqiures a Julia version >= v\"1.4.0-DEV.249\", or later than 2019-10-03."
 
-# Note, this requires Cassette built after 2019-10-10, or after
-# https://github.com/jrevels/Cassette.jl/pull/148 was merged.
-import Cassette # To recursively track _ALL FUNCTIONS CALLED_ while computing staged result.
 import MacroTools
 
 function expr_to_codeinfo(m, argnames, spnames, sp, e)
@@ -73,29 +70,19 @@ function argname(e::Expr)
 end
 
 # ---------------------
-# Set up Cassette for tracing generator execution
-
-Cassette.@context TraceCtx
-
-mutable struct Trace
-    calls::Vector{Any}
-    Trace() = new(Any[])
-end
-
-function Cassette.prehook(ctx::TraceCtx, f, args...)
-    push!(ctx.metadata.calls, (f, Tuple{(type_arg(a) for a in args)...}))
-    return nothing
-end
-# Skip Builtins, which can't be redefined so we don't need edges to them!
-Cassette.prehook(ctx::TraceCtx, f::Core.Builtin, args...) = nothing
-# Get typeof(arg) or Type{T} if arg is a Type. This keeps the method instances more precise.
-type_arg(a) = typeof(a)
-type_arg(::Type{T}) where {T} = Type{T}
-
-function generate_and_trace(generatorbody, args)
-    trace = Trace()
-    expr = Cassette.overdub(TraceCtx(metadata = trace), () -> generatorbody(args...))
-    expr, trace
+# Use the Julia modifications introduced in
+# https://github.com/JuliaLang/julia/compare/master...NHDaly:nhdaly-track-dynamic-dispatches
+# to track the MethodInstances of all dynamic dispatches that occur while executing generatorbody(args...)
+# NOTE: This function is the MAIN INTERESTING PART of this package! Here we collect all the
+# functions that are dispatched-to during execution of the generatorbody (importantly,
+# including the generatorbody itself), and we set backedges from all of them to the generated function.
+# NOTE also that we only need to capture _dynamic dispatches_, since regular back-edges are
+# sufficient to cover all other methods being updated.
+function generate_and_trace(@nospecialize(generatorbody))
+    ccall(:jl_start_tracking_dispatches, Cint, ())
+    expr = generatorbody()
+    trace = ccall(:jl_finish_tracking_dispatches, Vector{Any}, ())
+    (expr, trace)
 end
 # ---------------------
 
@@ -114,7 +101,7 @@ function _make_generator(__module__, f)
         userfunc = () -> $userbody
 
         # Call the generatorbody at latest world-age, to avoid currently frozen world-age.
-        expr, trace = Core._apply_pure($generate_and_trace, (userfunc, ()))
+        expr, trace = Core._apply_pure($generate_and_trace, (userfunc,))
         #Core.println("expr: $expr")
         code_info = $expr_to_codeinfo($__module__,
                                       # Note that generated functions all take an extra arg
@@ -124,22 +111,11 @@ function _make_generator(__module__, f)
                                       expr)
         #Core.println("code_info: $code_info")
 
-        code_info.edges = Core.MethodInstance[]
-        failures = Any[]
-        for (callf,callargs) in trace.calls
-            # Skip DataType constructor which found its way in here somehow
-            if callf == DataType continue end
-            try
-                push!(code_info.edges, Core.Compiler.method_instances(callf, callargs)[1])
-            catch
-                push!(failures, callargs)
-                continue
-            end
-        end
-        if !isempty(failures)
-            Core.println("WARNING: Some edges could not be found:")
-            Core.println(failures)
-        end
+        # NOTE: This is the other interesting part of this package! Here we set the edges
+        # of the returned code_info, which ultimately leads Julia to generate a new function
+        # and set backdges from all the method specializations in the trace back to it, so
+        # that if any of them change, this generated function will be updated as well!
+        code_info.edges = Core.MethodInstance[trace...]
         #Core.println("edges: $(code_info.edges)")
 
         # NOTE: The "return" here is very important! Apparently this is a bit of syntax that

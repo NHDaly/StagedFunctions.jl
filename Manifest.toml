@@ -9,13 +9,6 @@ git-tree-sha1 = "c69698c3d4a7255bc1b4bc2afc09f59db910243b"
 uuid = "00ebfdb7-1f24-5e51-bd34-a7502290713f"
 version = "0.6.2"
 
-[[Cassette]]
-git-tree-sha1 = "1e87897822f215946a32f4df25a4d6844894c7cb"
-repo-rev = "master"
-repo-url = "https://github.com/jrevels/Cassette.jl.git"
-uuid = "7057c7e9-c182-5462-911a-8362d720325c"
-version = "0.2.6"
-
 [[Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
 git-tree-sha1 = "84aa74986c5b9b898b0d1acaf3258741ee64754f"
